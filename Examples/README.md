@@ -256,7 +256,7 @@ This sample project is provided as-is for demonstration purposes.
 ## Support
 
 For issues, questions, or feature requests:
-- GitHub Issues: [edgen-ai/edgen-ios-client](https://github.com/edgen-ai/edgen-ios-client)
+- GitHub Issues: [CanMageOfficial/edgen-ios-client](https://github.com/CanMageOfficial/EdgenIOSClient/issues)
 
 ## Contributing
 

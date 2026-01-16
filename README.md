@@ -294,39 +294,6 @@ func cancelDownload(modelId: String)
 func cancelAllDownloads()
 ```
 
-### UI Components
-
-```swift
-// Model management view
-struct DownloadedModelsView: View
-
-// Image comparison view
-struct EnhancedImageComparisonView: View {
-    let originalImage: UIImage
-    let processedImage: UIImage?
-}
-
-// Image picker
-struct ImagePickerWithVideo: UIViewControllerRepresentable
-```
-
-### Utilities
-
-```swift
-// Process images with Core ML
-class ModelProcessor {
-    static func processImage(
-        _ image: UIImage,
-        configuration: FilePathModelConfiguration
-    ) throws -> UIImage
-}
-
-// Save to photo library
-class AlbumUtils {
-    static func saveImage(image: UIImage?)
-}
-```
-
 **For detailed examples and complete implementation**, see the **EdgenSwiftUISample** app included in this repository.
 
 ## Contributing
