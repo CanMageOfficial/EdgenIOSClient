@@ -15,9 +15,6 @@ A Swift package for downloading and managing Large Language Models (LLMs) and Co
 | ✅ **Validation** | SHA-256 hash verification for data integrity |
 | 🔄 **Auto Compilation** | Automatic Core ML model compilation |
 | 📱 **Model Management** | Built-in UI for browsing and managing models |
-| 🖼️ **Image Processing** | Ready-to-use Core ML image processing utilities |
-| 👁️ **Image Comparison** | Before/after comparison views |
-| 📷 **Camera Integration** | Camera and photo library access |
 | 💾 **Disk Management** | Automatic space verification |
 | ⚡ **Concurrent Downloads** | Adaptive multi-chunk downloading |
 
@@ -70,17 +67,7 @@ The fastest way to get started:
    ModelDownloadView(modelId: "your_model_id_here")
    ```
 
-4. **Add privacy descriptions** to `Info.plist` (for camera/photo access):
-   ```xml
-   <key>NSCameraUsageDescription</key>
-   <string>This app needs camera access to process images with AI models</string>
-   <key>NSPhotoLibraryUsageDescription</key>
-   <string>This app needs photo library access to select images</string>
-   <key>NSPhotoLibraryAddUsageDescription</key>
-   <string>This app needs permission to save processed images</string>
-   ```
-
-5. **Build and run** (⌘R)
+4. **Build and run** (⌘R)
 
 The sample app demonstrates the complete workflow: downloading models, processing images, and managing downloads.
 
