@@ -60,6 +60,22 @@ public class EdgenAIClient {
         Task { await EdgenAIConfig.shared.initialize(accessKey: accessKey, secretKey: secretKey) }
     }
     
+    /// Generate a unique session identifier for a model download
+    public static func sessionIdentifier(for modelId: String) -> String {
+        return "com.edgenai.download.\(modelId).\(UUID().uuidString)"
+    }
+    
+    /// Call this in your AppDelegate to handle background download completion
+    /// This is automatically routed to BackgroundSessionManager
+    public static func handleBackgroundEvents(forSession identifier: String, completionHandler: @escaping @Sendable () -> Void) {
+        Task { @MainActor in
+            BackgroundSessionManager.shared.handleBackgroundEvents(
+                forSession: identifier,
+                completionHandler: completionHandler
+            )
+        }
+    }
+    
     private let maxConcurrentDownloads = 3
     private let maxRetries = 3
     private var downloadStats = DownloadStatistics()
@@ -76,6 +92,19 @@ public class EdgenAIClient {
 
     private var documentsDirectory: URL {
         FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+    }
+    
+    /// Create a URL session for downloads
+    /// Note: Using default session with async/await instead of background sessions
+    /// because background sessions require delegate-only APIs (no completion handlers).
+    /// Our chunk-based approach with state persistence provides resumability without
+    /// needing true background execution.
+    private func createDownloadSession() -> URLSession {
+        let config = URLSessionConfiguration.default
+        config.timeoutIntervalForRequest = 60
+        config.timeoutIntervalForResource = 300
+        config.waitsForConnectivity = true
+        return URLSession(configuration: config)
     }
 
     private func getAuthHeader() async -> String {
@@ -447,7 +476,7 @@ public class EdgenAIClient {
         return permanentCompiledURL
     }
 
-    func downloadModel(
+    public func downloadModel(
         modelId: String,
         onProgress: @escaping (DetailedProgress) -> Void = { _ in }
     ) async throws -> (modelURL: URL, metadataURL: URL) {
@@ -509,6 +538,18 @@ public class EdgenAIClient {
 
         let downloadResponse = try JSONDecoder().decode(DownloadResponse.self, from: data)
         let sortedChunks = downloadResponse.urlInfoList.sorted { $0.chunkIndex < $1.chunkIndex }
+        
+        // Report initialization complete
+        onProgress(DetailedProgress(
+            percentage: 1,
+            downloadedBytes: 0,
+            totalBytes: 0,
+            bytesPerSecond: 0,
+            estimatedTimeRemaining: 0,
+            currentChunk: 0,
+            totalChunks: sortedChunks.count,
+            phase: .initializing
+        ))
         
         // Prepare progress state
         let progressState = try prepareProgressState(
@@ -605,10 +646,8 @@ public class EdgenAIClient {
         var validatedChunks = progressState.validatedChunks
         var totalBytes: Int64 = 0
         
-        let configuration = URLSessionConfiguration.default
-        configuration.timeoutIntervalForRequest = 60
-        configuration.timeoutIntervalForResource = 300
-        let session = URLSession(configuration: configuration, delegate: nil, delegateQueue: nil)
+        // Create a URLSession for downloads
+        let session = createDownloadSession()
         
         // Reset download statistics
         downloadStats = DownloadStatistics()
@@ -673,7 +712,7 @@ public class EdgenAIClient {
             while nextChunkIndex < sortedChunks.count && downloadingChunks < adaptiveConcurrency {
                 let urlInfo = sortedChunks[nextChunkIndex]
                 let isValidated = await coordinator.isChunkValidated(urlInfo.chunkIndex)
-                EdgenLogger.debug("Checking chunk \(urlInfo.chunkIndex) (\(urlInfo.chunkIndex + 1)/\(totalChunks)): validated=\(isValidated), downloadingChunks=\(downloadingChunks)")
+                //EdgenLogger.debug("Checking chunk \(urlInfo.chunkIndex) (\(urlInfo.chunkIndex + 1)/\(totalChunks)): validated=\(isValidated), downloadingChunks=\(downloadingChunks)")
                 
                 nextChunkIndex += 1
                 
@@ -687,7 +726,7 @@ public class EdgenAIClient {
                 let sessionCopy = session
                 let modelIdCopy = modelId
                 
-                EdgenLogger.debug("Queueing chunk \(urlInfoCopy.chunkIndex + 1)/\(totalChunks) for download")
+                // EdgenLogger.debug("Queueing chunk \(urlInfoCopy.chunkIndex + 1)/\(totalChunks) for download")
                 group.addTask(priority: nil) { @Sendable in
                     try Task.checkCancellation()
                     
@@ -761,13 +800,13 @@ public class EdgenAIClient {
                 
                 // Start next download
                 downloadingChunks -= 1
-                EdgenLogger.debug("Chunk completed. downloadingChunks now: \(downloadingChunks)")
+                // EdgenLogger.debug("Chunk completed. downloadingChunks now: \(downloadingChunks)")
                 
                 // Keep trying to find a chunk that needs downloading
                 while nextChunkIndex < sortedChunks.count {
                     let urlInfo = sortedChunks[nextChunkIndex]
                     let isValidated = await coordinator.isChunkValidated(urlInfo.chunkIndex)
-                    EdgenLogger.debug("Checking next chunk \(urlInfo.chunkIndex) (\(urlInfo.chunkIndex + 1)/\(totalChunks)): validated=\(isValidated)")
+                    //EdgenLogger.debug("Checking next chunk \(urlInfo.chunkIndex) (\(urlInfo.chunkIndex + 1)/\(totalChunks)): validated=\(isValidated)")
                     
                     nextChunkIndex += 1
                     
@@ -781,7 +820,7 @@ public class EdgenAIClient {
                     let sessionCopy = session
                     let modelIdCopy = modelId
                     
-                    EdgenLogger.debug("Queueing chunk \(urlInfoCopy.chunkIndex + 1)/\(totalChunks) for download")
+                    //EdgenLogger.debug("Queueing chunk \(urlInfoCopy.chunkIndex + 1)/\(totalChunks) for download")
                     group.addTask(priority: nil) { @Sendable in
                         try Task.checkCancellation()
                         
@@ -796,7 +835,7 @@ public class EdgenAIClient {
                     }
                     
                     downloadingChunks += 1
-                    EdgenLogger.debug("Queued chunk \(urlInfoCopy.chunkIndex + 1). downloadingChunks now: \(downloadingChunks)")
+                    // EdgenLogger.debug("Queued chunk \(urlInfoCopy.chunkIndex + 1). downloadingChunks now: \(downloadingChunks)")
                     break
                 }
             }

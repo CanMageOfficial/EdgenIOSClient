@@ -70,7 +70,7 @@ public struct ModelDownloadView: View {
             }
             
             // Resume Information
-            if let resumeInfo = downloadManager.resumeInfo {
+            if downloadManager.resumeInfo != nil {
                 VStack(alignment: .leading, spacing: 5) {
                     
                     if !downloadManager.isDownloading {

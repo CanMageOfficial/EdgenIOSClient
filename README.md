@@ -11,6 +11,7 @@ A Swift package for downloading and managing Large Language Models (LLMs) and Co
 | Feature | Description |
 |---------|-------------|
 | 📥 **Model Downloads** | Chunked downloads with automatic retry and resume |
+| 🔄 **Resume Capability** | Downloads resume from last completed chunk after app restart |
 | 📊 **Progress Tracking** | Real-time download statistics and phase updates |
 | ✅ **Validation** | SHA-256 hash verification for data integrity |
 | 🔄 **Auto Compilation** | Automatic Core ML model compilation |
@@ -133,10 +134,35 @@ do {
 ### Check if Model Exists
 
 ```swift
-let result = client.checkModelExistence(modelId: "your_model_id")
+let result = client.checkModelExists(modelId: "your_model_id")
 if result.exists {
     print("Model ready at: \(result.modelURL?.path ?? "unknown")")
 }
+```
+
+### Monitor Download Progress
+
+```swift
+// Get current download status
+let status = client.getDownloadStatus(modelId: "model_id")
+if status.hasProgress {
+    print("Downloaded: \(status.existingChunks.count)/\(status.progressState?.totalChunks ?? 0) chunks")
+}
+
+// Check if model exists by name
+let result = client.checkModelExistsByName(modelName: "llama-3.2-1b-instruct")
+if result.exists {
+    print("Found model: \(result.metadata?.modelId ?? "")")
+}
+```
+
+### Cancel Downloads
+
+```swift
+// Cancel specific download
+client.cancelDownload(modelId: "model_id")
+
+// The client automatically cleans up incomplete chunks
 ```
 
 ### Use Built-in Model Management UI
@@ -174,7 +200,16 @@ let processedImage = try ModelProcessor.processImage(inputImage, configuration: 
 ## Key Capabilities
 
 ### Resume Capability
-Downloads automatically resume from where they left off. Progress is saved after each chunk, and hash validation ensures integrity.
+Downloads automatically resume from the last successfully completed chunk. Progress is persisted after each chunk download, and SHA-256 hash validation ensures data integrity. If your app crashes or is terminated, simply restart the download and it will continue from where it left off.
+
+**How it works:**
+- Each chunk is validated with SHA-256 hash before being saved
+- Progress state is saved to disk after each successful chunk
+- On app restart, the SDK checks which chunks are already downloaded
+- Only missing chunks are re-downloaded
+- Final file is assembled and validated
+
+**Important Note:** Downloads do **not** continue when the app is suspended or in the background. The resume capability ensures that downloads can be restarted from the last completed chunk when the app is relaunched.
 
 ### Adaptive Concurrency
 The download system adjusts concurrent chunk downloads based on network conditions (up to 3 concurrent), reducing concurrency on failures and auto-retrying up to 3 times.
@@ -257,6 +292,8 @@ public enum DownloadPhase {
 ### Download Issues
 - **Fails immediately**: Check credentials, model ID, network, and permissions
 - **Slow download**: Network speed is the primary factor; SDK auto-adjusts concurrency
+- **Download interrupted**: Simply restart the download - it will resume from the last completed chunk
+- **Progress not resuming**: Check that progress state files aren't corrupted in Documents directory
 
 ### Core ML Issues
 - **Compilation fails**: Verify `.mlmodel` format and device compatibility
@@ -277,21 +314,31 @@ Use `DownloadedModelsView` to manage and delete unused models.
 ### EdgenAIClient
 
 ```swift
-// Initialize SDK
+// Initialize SDK (required)
 static func initialize(accessKey: String, secretKey: String)
 
-// Download model
+// Download model with progress tracking
 func downloadModel(
     modelId: String,
     onProgress: ((DetailedProgress) -> Void)?
-) async throws
+) async throws -> (modelURL: URL, metadataURL: URL)
 
-// Check if model exists
-func checkModelExistence(modelId: String) -> ModelExistenceResult
+// Check if model exists by ID
+func checkModelExists(modelId: String) -> ModelExistenceResult
+
+// Check if model exists by name
+func checkModelExistsByName(modelName: String) -> ModelExistenceResult
+
+// Get download status for UI display
+func getDownloadStatus(modelId: String) -> (
+    hasProgress: Bool,
+    progressState: DownloadProgressState?,
+    existingChunks: Set<Int>,
+    missingChunks: Set<Int>
+)
 
 // Cancel downloads
 func cancelDownload(modelId: String)
-func cancelAllDownloads()
 ```
 
 **For detailed examples and complete implementation**, see the **EdgenSwiftUISample** app included in this repository.
@@ -300,15 +347,63 @@ func cancelAllDownloads()
 
 Contributions are welcome! Please feel free to submit a Pull Request.
 
+### Development Documentation
+
+- **[CHANGELOG.md](CHANGELOG.md)** - Version history and changes
+
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
 ## Support
 
+- **📚 Documentation Index**: [DOCUMENTATION_INDEX.md](DOCUMENTATION_INDEX.md) - Navigate all guides
 - **Documentation**: [https://edgenai.canmage.com/docs](https://edgenai.canmage.com/docs)
 - **Issues**: [GitHub Issues](https://github.com/CanMageOfficial/EdgenIOSClient/issues)
 - **Email**: support@canmage.com
+
+## Architecture
+
+### Core Components
+
+- **EdgenAIClient** - Main client for downloading and managing models
+- **DownloadCoordinator** - Thread-safe chunk tracking with actors
+- **AIClientModels** - Data models for API communication
+- **EdgenLogger** - Logging utility for debugging
+
+### Download Flow
+
+```
+1. initializeDownload()
+   ↓ Requests download URLs from API
+   ↓ Validates disk space
+   ↓ Prepares/resumes progress state
+
+2. downloadAllChunks()
+   ↓ Creates URLSession with default configuration
+   ↓ Downloads chunks concurrently (adaptive: 1-3 at a time)
+   ↓ Validates each chunk with SHA-256
+   ↓ Saves progress after each chunk
+
+3. mergeAndValidateChunks()
+   ↓ Merges chunks in order
+   ↓ Validates final file hash
+   ↓ Cleans up chunk files
+
+4. compileMLModel() [if Core ML]
+   ↓ Compiles .mlmodel → .mlmodelc
+   ↓ Optimizes for device
+   
+5. saveModelMetadata()
+   ↓ Stores model info for management
+   ↓ Returns model URL
+```
+
+### Thread Safety
+
+- `EdgenAIConfig` - Actor for credential storage
+- `DownloadCoordinator` - Actor for chunk tracking
+- Progress callbacks - Delivered on calling context
 
 ## Acknowledgments
 
